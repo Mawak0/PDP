@@ -1,43 +1,59 @@
 package com.example;
 
-import com.thedeanda.lorem.LoremIpsum;
-
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 public class Main {
-    public static void main(String[] args) throws Exception {
-        int total_words = 0;
-        Path path = Path.of("C:/Users/Пользователь/PDP/text.txt");
+    private static final Pattern DECLARATION = Pattern.compile("\\b(?:class|interface)\\s+([\\w$]+)\\s*([^\\{]*)\\{", Pattern.DOTALL);
+    private static final Pattern RELATION = Pattern.compile("\\b(extends|implements)\\s+([^\\{]+?)(?=\\b(?:extends|implements)\\b|$)", Pattern.DOTALL);
+    private static final Pattern TYPE = Pattern.compile("[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)?");
 
-        if (Files.notExists(path)) {
-            Files.createDirectories(path.getParent());
+    public static void main(String[] args) throws IOException {
+        Path root = args.length == 0 ? Path.of(".") : Path.of(args[0]);
+        Map<String, List<String>> index = new TreeMap<>();
+        List<Path> files;
 
-            String lorem = LoremIpsum.getInstance().getWords(350);
-            Files.writeString(path, lorem);
+        try (Stream<Path> paths = Files.walk(root)) {
+            files = paths.filter(path -> path.toString().endsWith(".java")).toList();
         }
 
-        String text = Files.readString(path).toLowerCase();
-
-        Pattern pattern = Pattern.compile("\\p{L}+");
-        Matcher matcher = pattern.matcher(text);
-
-        Map<String, Integer> words = new HashMap<>();
-
-        while (matcher.find()) {
-            total_words++;
-            String word = matcher.group();
-            words.put(word, words.getOrDefault(word, 0) + 1);
+        for (Path file : files) {
+            addRelations(Files.readString(file), index);
         }
 
-        for (String word : words.keySet()) {
-            System.out.println(word + ": " + words.get(word));
+        index.forEach((parent, children) -> {
+            children.sort(Comparator.naturalOrder());
+            System.out.println(parent + " -> " + String.join(", ", children));
+        });
+    }
 
+    private static void addRelations(String source, Map<String, List<String>> index) {
+        Matcher declarations = DECLARATION.matcher(source);
+        while (declarations.find()) {
+            String child = declarations.group(1);
+            Matcher relations = RELATION.matcher(declarations.group(2).replaceAll("<[^<>]*>", " "));
+            while (relations.find()) {
+                for (String part : relations.group(2).split(",")) {
+                    Matcher type = TYPE.matcher(part);
+                    if (type.find()) {
+                        String parent = type.group();
+                        List<String> children = index.getOrDefault(parent, new ArrayList<>());
+                        if (!children.contains(child)) {
+                            children.add(child);
+                        }
+                        index.put(parent, children);
+                    }
+                }
+            }
         }
-        System.out.println("Всего слов: "+total_words);
     }
 }
