@@ -3,11 +3,14 @@ package com.example;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.CountDownLatch;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -18,19 +21,43 @@ public class Main {
     private static final Pattern RELATION = Pattern.compile("\\b(extends|implements)\\s+([^\\{]+?)(?=\\b(?:extends|implements)\\b|$)", Pattern.DOTALL);
     private static final Pattern TYPE = Pattern.compile("(?:[A-Za-z_$][\\w$]*\\.)*[A-Za-z_$][\\w$]*");
 
-    public static void main(String[] args) throws IOException {
-        String projectPath = "C:/Users/Пользователь/PDP";
+    public static void main(String[] args) throws IOException, InterruptedException {
+        String projectPath = "C:/Users/Пользователь/java_practice";
         Path root = Path.of(projectPath);
-        Map<String, Set<String>> index = new TreeMap<>();
         List<Path> files;
 
         try (Stream<Path> paths = Files.walk(root)) {
             files = paths.filter(path -> path.toString().endsWith(".java")).toList();
         }
 
+        List<Map<String, Set<String>>> results = Collections.synchronizedList(new ArrayList<>());
+        List<IOException> errors = Collections.synchronizedList(new ArrayList<>());
+        CountDownLatch latch = new CountDownLatch(files.size());
+
         for (Path file : files) {
-            addRelations(Files.readString(file), index);
+            Thread.startVirtualThread(() -> {
+                try {
+                    Map<String, Set<String>> result = new TreeMap<>();
+                    addRelations(Files.readString(file), result);
+                    results.add(result);
+                } catch (IOException e) {
+                    errors.add(e);
+                } finally {
+                    latch.countDown();
+                }
+            });
         }
+
+        latch.await();
+
+        if (!errors.isEmpty()) throw errors.getFirst();
+
+        Map<String, Set<String>> index = new TreeMap<>();
+        results.forEach(result -> result.forEach((parent, children) -> {
+            Set<String> allChildren = index.getOrDefault(parent, new TreeSet<>());
+            allChildren.addAll(children);
+            index.put(parent, allChildren);
+        }));
 
         index.forEach((parent, children) -> System.out.println(parent + " -> " + String.join(", ", children)));
     }
