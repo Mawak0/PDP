@@ -22,7 +22,7 @@ public class Main {
     private static final Pattern TYPE = Pattern.compile("(?:[A-Za-z_$][\\w$]*\\.)*[A-Za-z_$][\\w$]*");
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        String projectPath = "C:/Users/Пользователь/java_practice";
+        String projectPath = "C:/Users/Пользователь/spring-framework";
         Path root = Path.of(projectPath);
         List<Path> files;
 
