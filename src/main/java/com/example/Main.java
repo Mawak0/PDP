@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -32,14 +33,20 @@ public class Main {
 
         Map<String, Set<String>> results = new HashMap<>();
         List<IOException> errors = new ArrayList<>();
+        ReentrantLock lock = new ReentrantLock();
         CountDownLatch latch = new CountDownLatch(files.size());
 
         for (Path file : files) {
             Thread.startVirtualThread(() -> {
                 try {
-                    addRelations(Files.readString(file), results);
+                    addRelations(Files.readString(file), results, lock);
                 } catch (IOException e) {
-                    errors.add(e);
+                    lock.lock();
+                    try {
+                        errors.add(e);
+                    } finally {
+                        lock.unlock();
+                    }
                 } finally {
                     latch.countDown();
                 }
@@ -63,20 +70,30 @@ public class Main {
         System.out.println("Листьев: " + leaves.size());
     }
 
-    private static void addRelations(String source, Map<String, Set<String>> index) {
+    private static void addRelations(String source, Map<String, Set<String>> index, ReentrantLock lock) {
         Matcher declarations = DECLARATION.matcher(IGNORED.matcher(source).replaceAll(" "));
         while (declarations.find()) {
             String child = declarations.group(1);
-            index.putIfAbsent(child, new HashSet<>());
+            lock.lock();
+            try {
+                index.putIfAbsent(child, new HashSet<>());
+            } finally {
+                lock.unlock();
+            }
             Matcher relations = RELATION.matcher(withoutGenerics(declarations.group(2)));
             while (relations.find()) {
                 for (String part : relations.group(2).split(",")) {
                     Matcher type = TYPE.matcher(part);
                     if (type.find()) {
                         String parent = type.group();
-                        Set<String> children = index.getOrDefault(parent, new HashSet<>());
-                        children.add(child);
-                        index.put(parent, children);
+                        lock.lock();
+                        try {
+                            Set<String> children = index.getOrDefault(parent, new HashSet<>());
+                            children.add(child);
+                            index.put(parent, children);
+                        } finally {
+                            lock.unlock();
+                        }
                     }
                 }
             }
